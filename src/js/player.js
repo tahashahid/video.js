@@ -533,6 +533,7 @@ class Player extends Component {
     this.changingSrc_ = false;
     this.playWaitingForReady_ = false;
     this.playOnLoadstart_ = null;
+    this.playSuccessCallbacks_ = [];
   }
 
   /**
@@ -1341,6 +1342,12 @@ class Player extends Component {
     if (!this.tech_ || typeof type !== 'string') {
       return;
     }
+    let playTerminated = false;
+
+    this.one('playterminated', () => {
+      playTerminated = true;
+      this.trigger({type: 'autoplay-failure', autoplay: type});
+    });
 
     const muted = () => {
       const previouslyMuted = this.muted();
@@ -1349,11 +1356,18 @@ class Player extends Component {
 
       const playPromise = this.play();
 
+      this.one('playterminated', () => {
+        this.muted(previouslyMuted);
+      });
+
       if (!playPromise || !playPromise.then || !playPromise.catch) {
         return;
       }
 
       return playPromise.catch((e) => {
+        if (playTerminated) {
+          return;
+        }
         // restore old value of muted on failure
         this.muted(previouslyMuted);
       });
@@ -1366,6 +1380,9 @@ class Player extends Component {
 
       if (promise && promise.then && promise.catch) {
         promise.catch(() => {
+          if (playTerminated) {
+            return;
+          }
           return muted();
         });
       }
@@ -1380,8 +1397,14 @@ class Player extends Component {
     }
 
     return promise.then(() => {
+      if (playTerminated) {
+        return;
+      }
       this.trigger({type: 'autoplay-success', autoplay: type});
     }).catch((e) => {
+      if (playTerminated) {
+        return;
+      }
       this.trigger({type: 'autoplay-failure', autoplay: type});
     });
   }
@@ -1577,6 +1600,8 @@ class Player extends Component {
     this.removeClass('vjs-ended');
     this.removeClass('vjs-paused');
     this.addClass('vjs-playing');
+
+    this.runPlaySuccessCallbacks_(this.play());
 
     // hide the poster when the user hits play
     this.hasStarted(true);
@@ -2222,6 +2247,7 @@ class Player extends Component {
 
       // Bail out if we're already waiting for `ready`!
       if (this.playWaitingForReady_) {
+        this.playSuccessCallbacks_.push(callback);
         return;
       }
 
@@ -2230,10 +2256,18 @@ class Player extends Component {
         this.playWaitingForReady_ = false;
         callback(this.play());
       });
-
     // If the player/tech is ready and we have a source, we can attempt playback.
     } else if (!this.changingSrc_ && (this.src() || this.currentSrc())) {
-      callback(this.techGet_('play'));
+      // If the player/tech is ready and we have a source, we can attempt playback.
+      const val = this.techGet_('play');
+
+      if (val !== middleware.TERMINATOR) {
+        this.playSuccessCallbacks_.push(callback);
+        this.runPlaySuccessCallbacks_(val);
+      } else {
+        this.playSuccessCallbacks_.push(callback);
+        this.trigger('playterminated');
+      }
       return;
 
     // If the tech is ready, but we do not have a source, we'll need to wait
@@ -2243,7 +2277,6 @@ class Player extends Component {
     // This can happen if `play()` is called while changing sources or before
     // one has been set on the player.
     } else {
-
       this.playOnLoadstart_ = () => {
         this.playOnLoadstart_ = null;
         callback(this.play());
@@ -2257,6 +2290,16 @@ class Player extends Component {
       this.one('loadstart', this.playOnLoadstart_);
     }
 
+  }
+
+  runPlaySuccessCallbacks_(val) {
+    const callbacks = this.playSuccessCallbacks_.slice(0);
+
+    this.playSuccessCallbacks_ = [];
+
+    callbacks.forEach(function(cb) {
+      cb(val);
+    });
   }
 
   /**
