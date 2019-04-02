@@ -1,0 +1,19 @@
+{
+  "name": "video.js",
+  "homepage": "https://github.com/tahashahid/video.js",
+  "version": "7.5.3",
+  "_release": "7.5.3",
+  "main": [
+      "src/js/index.js",
+      "src/css/video-js.min.css"
+  ],
+  "_resolution": {
+    "type": "version",
+    "tag": "v7.5.3",
+    "commit": "6c86b326688c19851dce6d3ef40eafaaae3420bf"
+  },
+  
+  "_source": "https://github.com/videojs/video.js.git",
+  "_target": ">=6.2.7",
+  "_originalSource": "video.js"
+}
